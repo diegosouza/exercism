@@ -1,9 +1,8 @@
 defmodule Markdown do
 
-  @strong_begin ~r/^#{"__"}{1}/
-  @strong_end ~r/#{"__"}{1}$/
-  @italic_begin ~r/^[#{"_"}{1}][^#{"_"}+]/
-  @italic_end ~r/[^#{"_"}{1}]/
+  @list_regex ~r/(?<!<\/li>)<li>(.*)<\/li>(?!<li>)/
+  @bold_regex ~r/__([^_]*)__/
+  @emphasize_regex ~r/_([^_]*)_/
 
   @doc """
     Parses a given string with Markdown syntax and returns the associated HTML for that string.
@@ -18,92 +17,33 @@ defmodule Markdown do
   """
   def parse(m) do
     m
-    |> lines()
-    |> Enum.map(&process/1)
-    |> Enum.join()
-    |> patch()
+    |> String.split("\n")
+    |> Enum.map_join(&process_text/1)
+    |> list
+    |> bold
+    |> italic
   end
 
-  defp process(line) do
-    cond do
-      header?(line)         -> h_tag(line)
-      paragraph?(line)      -> p_tag(line)
-      unordered_list?(line) -> ul_li_tags(line)
-    end
+  defp process_text("#" <> text), do: parse_header(text)
+  defp process_text("* " <> text), do: enclose_with_tag(text, "li")
+  defp process_text(t), do: "<p>#{t}</p>"
+
+  defp parse_header(text, level \\1)
+  defp parse_header("#" <> text, level), do: parse_header(text, level + 1)
+  defp parse_header(" " <> text, level), do: enclose_with_tag(text, "h#{level}")
+
+  defp enclose_with_tag(text, tag), do: "<#{tag}>#{text}</#{tag}>"
+
+  defp list(t) do
+    String.replace(t, @list_regex, "<ul><li>\\1</li></ul>")
   end
 
-  defp ul_li_tags(line) do
-    line
-    |> String.trim_leading("* ")
-    |> String.split()
-    |> join_words_with_tags()
-    |> wrap("li")
+  defp bold(t) do
+    String.replace(t, @bold_regex, "<strong>\\1</strong>")
   end
 
-  defp h_tag(line) do
-    [hashtags | words] = String.split(line)
-    level = hashtags |> String.length() |> to_string()
-    join_words_with_tags(words) |> wrap("h#{level}")
-  end
-
-  defp p_tag(line) do
-    line
-    |> String.split()
-    |> join_words_with_tags()
-    |> wrap("p")
-  end
-
-  defp join_words_with_tags(text) do
-    text
-    |> Enum.map(&prefix_and_suffix(&1))
-    |> Enum.join(" ")
-  end
-
-  defp prefix_and_suffix(text) do
-    text
-    |> replace_prefix()
-    |> replace_suffix()
-  end
-
-
-  defp replace_prefix(w) do
-    cond do
-      w =~ @strong_begin ->
-        String.replace(w, @strong_begin, "<strong>", global: false)
-      w =~ @italic_begin ->
-        String.replace(w, "_" , "<em>", global: false)
-      true -> w
-    end
-  end
-
-  defp replace_suffix(w) do
-    cond do
-      w =~ @strong_end ->
-        String.replace(w, @strong_end, "</strong>")
-      w =~ @italic_end ->
-        String.replace(w, "_", "</em>")
-      true -> w
-    end
-  end
-
-  defp wrap(content, tag) do
-    "<#{tag}>#{content}</#{tag}>"
-  end
-
-  defp patch(text) do
-    String.replace_suffix(
-      String.replace(text, "<li>", "<ul><li>", global: false),
-      "</li>",
-      "</li></ul>"
-    )
-  end
-
-  defp lines(m), do: String.split(m, "\n")
-  defp header?(t), do: String.starts_with?(t, "#")
-  defp unordered_list?(t), do: String.starts_with?(t, "*")
-
-  defp paragraph?(t) do
-    not (header?(t) or unordered_list?(t))
+  defp italic(t) do
+    String.replace(t, @emphasize_regex, "<em>\\1</em>")
   end
 
 end
